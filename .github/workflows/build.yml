@@ -122,6 +122,42 @@ jobs:
             feeds/packages/lang/golang/golang/Makefile
           echo "外部 bootstrap 就绪"
 
+      - name: 生成缓存 key
+        id: cachekey
+        run: |
+          cd openwrt
+          # 缓存键 = openwrt 源码 HEAD + 各 feed 的 HEAD + 配置文件哈希。
+          # feed 版本或配置变化(如升级 golang)时缓存自动失效，触发重新缓存。
+          {
+            git rev-parse HEAD
+            git -C feeds/packages rev-parse HEAD 2>/dev/null
+            git -C feeds/luci rev-parse HEAD 2>/dev/null
+            for d in package/ua3f package/rkp-ipid package/luci-app-passwall2 \
+                     package/passwall-packages package/mihomo-meta \
+                     package/nikki package/luci-app-nikki \
+                     package/lucky package/luci-app-lucky; do
+              [ -d "$d/.git" ] && echo "$d $(git -C $d rev-parse HEAD 2>/dev/null)"
+            done
+            sha256sum $GITHUB_WORKSPACE/config/sl3000.config
+          } | md5sum | cut -d' ' -f1 > /tmp/cache-key.txt
+          echo "key=sl3000-$(cat /tmp/cache-key.txt)" >> $GITHUB_OUTPUT
+          echo "缓存 key: $(cat /tmp/cache-key.txt)"
+
+      - name: 恢复依赖/编译缓存
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            openwrt/dl
+            openwrt/build_dir/target-*
+            openwrt/staging_dir/target-*
+            openwrt/staging_dir/host
+            openwrt/build_dir/host*
+            openwrt/staging_dir/toolchain-*
+            openwrt/build_dir/toolchain-*
+          key: ${{ steps.cachekey.outputs.key }}
+          restore-keys: |
+            ${{ steps.cachekey.outputs.key }}
+
       - name: 生成 .config
         run: |
           cd openwrt
@@ -153,6 +189,19 @@ jobs:
           done
           # 3 轮后仍有失败则明确报错（避免带残缺 dl/ 进入编译）
           make download -j1 V=s
+
+      - name: 保存依赖/编译缓存
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            openwrt/dl
+            openwrt/build_dir/target-*
+            openwrt/staging_dir/target-*
+            openwrt/staging_dir/host
+            openwrt/build_dir/host*
+            openwrt/staging_dir/toolchain-*
+            openwrt/build_dir/toolchain-*
+          key: ${{ steps.cachekey.outputs.key }}
 
       - name: 编译固件
         run: |
