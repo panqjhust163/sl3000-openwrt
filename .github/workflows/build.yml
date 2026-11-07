@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: 初始化环境
         run: |
@@ -144,7 +144,7 @@ jobs:
           echo "缓存 key: $(cat /tmp/cache-key.txt)"
 
       - name: 恢复依赖/编译缓存
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: |
             openwrt/dl
@@ -191,7 +191,7 @@ jobs:
           make download -j1 V=s
 
       - name: 保存依赖/编译缓存
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: |
             openwrt/dl
