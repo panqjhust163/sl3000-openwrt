@@ -152,17 +152,26 @@ jobs:
           restore-keys: |
             sl3000-dl-
 
-      - name: 恢复编译缓存 (build/staging/toolchain)
+      - name: 恢复交叉编译工具链缓存 (host+toolchain)
+        id: cache_restore_toolchain
+        uses: actions/cache/restore@v5
+        with:
+          path: |
+            openwrt/staging_dir/toolchain-*
+            openwrt/build_dir/toolchain-*
+            openwrt/staging_dir/host
+            openwrt/build_dir/host*
+          key: sl3000-toolchain-${{ steps.cachekey.outputs.key }}
+          restore-keys: |
+            sl3000-toolchain-
+
+      - name: 恢复构建产物缓存 (build/target)
         id: cache_restore_build
         uses: actions/cache/restore@v5
         with:
           path: |
             openwrt/build_dir/target-*
             openwrt/staging_dir/target-*
-            openwrt/staging_dir/host
-            openwrt/build_dir/host*
-            openwrt/staging_dir/toolchain-*
-            openwrt/build_dir/toolchain-*
           key: sl3000-build-${{ steps.cachekey.outputs.key }}
           restore-keys: |
             sl3000-build-
@@ -205,23 +214,38 @@ jobs:
           path: openwrt/dl
           key: sl3000-dl-${{ steps.cachekey.outputs.key }}
 
-      - name: 编译固件
+      - name: 阶段A - 编译工具链 (host+toolchain)
         run: |
           cd openwrt
-          # 编译过程若因下载/资源问题中断，make 增量续编即可恢复；
+          # 先只编译 host 工具和交叉工具链，编译完成后立即缓存，独立于固件。
+          # 交叉工具链编译一次耗时久，单独缓存可大幅加速后续固件编译。
+          make tools/install toolchain/install -j$(nproc) V=s \
+            || make tools/install toolchain/install -j1 V=s
+
+      - name: 保存交叉编译工具链缓存 (host+toolchain)
+        uses: actions/cache/save@v5
+        with:
+          path: |
+            openwrt/staging_dir/toolchain-*
+            openwrt/build_dir/toolchain-*
+            openwrt/staging_dir/host
+            openwrt/build_dir/host*
+          key: sl3000-toolchain-${{ steps.cachekey.outputs.key }}
+
+      - name: 阶段B - 编译固件 (target)
+        run: |
+          cd openwrt
+          # 工具链已在阶段A编译完成，这里 make 会自动跳过已编译部分，
+          # 只编译 target 固件/内核/软件包，增量续编即可恢复；
           # 先并行尝试，失败自动降级单线程重跑一轮
           make -j$(nproc) V=s || make -j1 V=s || (make -j1 V=s && echo "重试后编译完成")
 
-      - name: 保存编译缓存 (build/staging/toolchain)
+      - name: 保存构建产物缓存 (build/target)
         uses: actions/cache/save@v5
         with:
           path: |
             openwrt/build_dir/target-*
             openwrt/staging_dir/target-*
-            openwrt/staging_dir/host
-            openwrt/build_dir/host*
-            openwrt/staging_dir/toolchain-*
-            openwrt/build_dir/toolchain-*
           key: sl3000-build-${{ steps.cachekey.outputs.key }}
 
       - name: 收集固件
