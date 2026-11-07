@@ -143,20 +143,29 @@ jobs:
           echo "key=sl3000-$(cat /tmp/cache-key.txt)" >> $GITHUB_OUTPUT
           echo "缓存 key: $(cat /tmp/cache-key.txt)"
 
-      - name: 恢复依赖/编译缓存
+      - name: 恢复依赖下载缓存 (dl)
+        id: cache_restore_dl
+        uses: actions/cache/restore@v5
+        with:
+          path: openwrt/dl
+          key: sl3000-dl-${{ steps.cachekey.outputs.key }}
+          restore-keys: |
+            sl3000-dl-
+
+      - name: 恢复编译缓存 (build/staging/toolchain)
+        id: cache_restore_build
         uses: actions/cache/restore@v5
         with:
           path: |
-            openwrt/dl
             openwrt/build_dir/target-*
             openwrt/staging_dir/target-*
             openwrt/staging_dir/host
             openwrt/build_dir/host*
             openwrt/staging_dir/toolchain-*
             openwrt/build_dir/toolchain-*
-          key: ${{ steps.cachekey.outputs.key }}
+          key: sl3000-build-${{ steps.cachekey.outputs.key }}
           restore-keys: |
-            ${{ steps.cachekey.outputs.key }}
+            sl3000-build-
 
       - name: 生成 .config
         run: |
@@ -190,18 +199,11 @@ jobs:
           # 3 轮后仍有失败则明确报错（避免带残缺 dl/ 进入编译）
           make download -j1 V=s
 
-      - name: 保存依赖/编译缓存
+      - name: 保存依赖下载缓存 (dl)
         uses: actions/cache/save@v5
         with:
-          path: |
-            openwrt/dl
-            openwrt/build_dir/target-*
-            openwrt/staging_dir/target-*
-            openwrt/staging_dir/host
-            openwrt/build_dir/host*
-            openwrt/staging_dir/toolchain-*
-            openwrt/build_dir/toolchain-*
-          key: ${{ steps.cachekey.outputs.key }}
+          path: openwrt/dl
+          key: sl3000-dl-${{ steps.cachekey.outputs.key }}
 
       - name: 编译固件
         run: |
@@ -209,6 +211,18 @@ jobs:
           # 编译过程若因下载/资源问题中断，make 增量续编即可恢复；
           # 先并行尝试，失败自动降级单线程重跑一轮
           make -j$(nproc) V=s || make -j1 V=s || (make -j1 V=s && echo "重试后编译完成")
+
+      - name: 保存编译缓存 (build/staging/toolchain)
+        uses: actions/cache/save@v5
+        with:
+          path: |
+            openwrt/build_dir/target-*
+            openwrt/staging_dir/target-*
+            openwrt/staging_dir/host
+            openwrt/build_dir/host*
+            openwrt/staging_dir/toolchain-*
+            openwrt/build_dir/toolchain-*
+          key: sl3000-build-${{ steps.cachekey.outputs.key }}
 
       - name: 收集固件
         run: |
